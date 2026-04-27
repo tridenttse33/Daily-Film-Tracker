@@ -332,9 +332,11 @@ let log = [];
 let SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyB2mO_DnwOsrD76nVVnvZwc5XuHlNBbv04qVnRcXeF2wa-YuriLiXNlSR6blrAF2yo/exec';
 
 // Init
-const today = new Date();
-document.getElementById('date-input').value = today.toISOString().split('T')[0];
-if(SCRIPT_URL) { setConnected(true); }
+window.addEventListener('DOMContentLoaded', function() {
+  const today = new Date();
+  document.getElementById('date-input').value = today.toISOString().split('T')[0];
+  if(SCRIPT_URL) { setConnected(true); }
+});
 
 function saveUrl(){
   SCRIPT_URL = document.getElementById('script-url').value.trim();
