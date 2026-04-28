@@ -199,8 +199,8 @@
 
 <div class="summary">
   <div class="stat"><div class="stat-num" id="s-rolls">0</div><div class="stat-lbl">Rolls</div></div>
-  <div class="stat"><div class="stat-num" id="s-income">£0</div><div class="stat-lbl">Income</div></div>
-  <div class="stat"><div class="stat-num" id="s-avg">£0</div><div class="stat-lbl">Avg/roll</div></div>
+  <div class="stat"><div class="stat-num" id="s-income">&#163;0</div><div class="stat-lbl">Income</div></div>
+  <div class="stat"><div class="stat-num" id="s-avg">&#163;0</div><div class="stat-lbl">Avg/roll</div></div>
 </div>
 
 <div class="content">
@@ -268,14 +268,14 @@
   <div class="section">
     <div class="section-label">Extras (optional — tap to toggle)</div>
     <div class="chips">
-      <div class="chip" data-g="extra" data-v="same day">Same day +£5</div>
-      <div class="chip" data-g="extra" data-v="half">Half +£3</div>
-      <div class="chip" data-g="extra" data-v="VIP">VIP -£1.50</div>
-      <div class="chip" data-g="extra" data-v="PULL 1">Pull 1 +£2</div>
-      <div class="chip" data-g="extra" data-v="PULL 2">Pull 2 +£4</div>
-      <div class="chip" data-g="extra" data-v="PUSH 1">Push 1 +£2</div>
-      <div class="chip" data-g="extra" data-v="PUSH 2">Push 2 +£4</div>
-      <div class="chip" data-g="extra" data-v="double prints">Dbl prints +£7</div>
+      <div class="chip" data-g="extra" data-v="same day">Same day +&#163;5</div>
+      <div class="chip" data-g="extra" data-v="half">Half +&#163;3</div>
+      <div class="chip" data-g="extra" data-v="VIP">VIP -&#163;1.50</div>
+      <div class="chip" data-g="extra" data-v="PULL 1">Pull 1 +&#163;2</div>
+      <div class="chip" data-g="extra" data-v="PULL 2">Pull 2 +&#163;4</div>
+      <div class="chip" data-g="extra" data-v="PUSH 1">Push 1 +&#163;2</div>
+      <div class="chip" data-g="extra" data-v="PUSH 2">Push 2 +&#163;4</div>
+      <div class="chip" data-g="extra" data-v="double prints">Dbl prints +&#163;7</div>
     </div>
   </div>
 
@@ -327,7 +327,7 @@ const PRICES = {
 };
 const EXTRAS = {"same day":5,"half":3,"VIP":-1.5,"PULL 1":2,"PULL 2":4,"PUSH 1":2,"PUSH 2":4,"double prints":7};
 
-let sel = {film:null,format:null,prints:"NO",option:null,extra:null};
+let sel = {film:null,format:null,prints:"NO",option:null,extras:[]};
 let log = [];
 let SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyB2mO_DnwOsrD76nVVnvZwc5XuHlNBbv04qVnRcXeF2wa-YuriLiXNlSR6blrAF2yo/exec';
 
@@ -357,8 +357,8 @@ document.querySelectorAll('.chip').forEach(c => {
   c.addEventListener('click', () => {
     const g = c.dataset.g, v = c.dataset.v;
     if(g === 'extra'){
-      if(sel.extra === v){ sel.extra = null; c.classList.remove('active'); }
-      else { document.querySelectorAll('[data-g="extra"]').forEach(x=>x.classList.remove('active')); sel.extra=v; c.classList.add('active'); }
+      if(sel.extras.includes(v)){ sel.extras=sel.extras.filter(x=>x!==v); c.classList.remove('active'); }
+      else { sel.extras.push(v); c.classList.add('active'); }
     } else {
       document.querySelectorAll(`[data-g="${g}"]`).forEach(x=>x.classList.remove('active'));
       sel[g]=v; c.classList.add('active');
@@ -372,19 +372,20 @@ function getPrice(){
   const key=`${sel.format}|${sel.film}|${sel.option}|${sel.prints||"NO"}`;
   const base=PRICES[key];
   if(base===undefined) return null;
-  return base + (sel.extra ? (EXTRAS[sel.extra]||0) : 0);
+  const extraTotal = sel.extras.reduce((sum,e)=>sum+(EXTRAS[e]||0),0);
+  return base + extraTotal;
 }
 
 function updatePrice(){
   const p=getPrice();
-  document.getElementById('calc-price').textContent = p!==null ? `£${p.toFixed(2)}` : '—';
+  document.getElementById('calc-price').innerHTML = p!==null ? `&#163;${p.toFixed(2)}` : '&mdash;';
 }
 
 function updateSummary(){
   const total=log.reduce((a,r)=>a+r.price,0);
   document.getElementById('s-rolls').textContent=log.length;
-  document.getElementById('s-income').textContent=`£${total.toFixed(0)}`;
-  document.getElementById('s-avg').textContent=log.length?`£${(total/log.length).toFixed(0)}`:'£0';
+  document.getElementById('s-income').innerHTML=`&#163;${total.toFixed(0)}`;
+  document.getElementById('s-avg').innerHTML=log.length?`&#163;${(total/log.length).toFixed(0)}`:'&#163;0';
   document.getElementById('log-count').textContent=`${log.length} roll${log.length!==1?'s':''}`;
 }
 
@@ -437,7 +438,7 @@ document.getElementById('add-btn').addEventListener('click', async ()=>{
   const labelVal=document.getElementById('label-input').value;
 
   const entry={date:dateVal,label:labelVal,film:sel.film,format:sel.format,
-    option:sel.option,prints:sel.prints||'NO',extra:sel.extra||'',price:p};
+    option:sel.option,prints:sel.prints||'NO',extra:sel.extras.join(', '),price:p};
 
   const btn=document.getElementById('add-btn');
   btn.disabled=true; btn.textContent='Syncing…'; btn.classList.add('loading');
@@ -445,6 +446,8 @@ document.getElementById('add-btn').addEventListener('click', async ()=>{
   log.push({...entry, synced:false, syncFailed:false});
   const idx=log.length-1;
 
+  // Reset extras
+  sel.extras=[]; document.querySelectorAll('[data-g="extra"]').forEach(x=>x.classList.remove('active'));
   // Auto-increment label
   if(labelVal) document.getElementById('label-input').value=String(parseInt(labelVal)+1);
 
