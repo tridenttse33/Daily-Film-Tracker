@@ -276,7 +276,11 @@
       <div class="chip" data-g="extra" data-v="PUSH 1">Push 1 +&#163;2</div>
       <div class="chip" data-g="extra" data-v="PUSH 2">Push 2 +&#163;4</div>
       <div class="chip" data-g="extra" data-v="double prints">Dbl prints +&#163;7</div>
+      <div class="chip" data-g="extra" data-v="HALF+PRINT">Half+Print +&#163;10</div>
+      <div class="chip" data-g="extra" data-v="NN">NN -&#163;0.20</div>
+      <div class="chip" data-g="extra" data-v="STU">STU -10%</div>
     </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:0.4rem">Up to 3 extras per roll</div>
   </div>
 
   <div class="price-display">
@@ -325,7 +329,8 @@ const PRICES = {
   "135|Strip Scan|LOW|NO":11,"135|Strip Scan|MED|NO":12,"135|Strip Scan|HIGH|NO":15,"135|Strip Scan|TIFF|NO":17,
   "135|Roll Scan|LOW|NO":8,"135|Roll Scan|MED|NO":9,"135|Roll Scan|HIGH|NO":12,"135|Roll Scan|TIFF|NO":14,
 };
-const EXTRAS = {"same day":5,"half":3,"VIP":-1.5,"PULL 1":2,"PULL 2":4,"PUSH 1":2,"PUSH 2":4,"double prints":7};
+const EXTRAS = {"same day":5,"half":3,"VIP":-1.5,"PULL 1":2,"PULL 2":4,"PUSH 1":2,"PUSH 2":4,"double prints":7,"HALF+PRINT":10,"NN":-0.2,"STU":0};
+const MAX_EXTRAS = 3;
 
 let sel = {film:null,format:null,prints:"NO",option:null,extras:[]};
 let log = [];
@@ -358,7 +363,13 @@ document.querySelectorAll('.chip').forEach(c => {
     const g = c.dataset.g, v = c.dataset.v;
     if(g === 'extra'){
       if(sel.extras.includes(v)){ sel.extras=sel.extras.filter(x=>x!==v); c.classList.remove('active'); }
-      else { sel.extras.push(v); c.classList.add('active'); }
+      else {
+        if(sel.extras.length >= MAX_EXTRAS){
+          showToast(`Max ${MAX_EXTRAS} extras per roll`, 'error');
+          return;
+        }
+        sel.extras.push(v); c.classList.add('active');
+      }
     } else {
       document.querySelectorAll(`[data-g="${g}"]`).forEach(x=>x.classList.remove('active'));
       sel[g]=v; c.classList.add('active');
@@ -372,7 +383,14 @@ function getPrice(){
   const key=`${sel.format}|${sel.film}|${sel.option}|${sel.prints||"NO"}`;
   const base=PRICES[key];
   if(base===undefined) return null;
+  // Sum of fixed-amount extras (lookup value), STU=0
   const extraTotal = sel.extras.reduce((sum,e)=>sum+(EXTRAS[e]||0),0);
+  // STU = 10% off (K + L - sameday)
+  if(sel.extras.includes('STU')){
+    const sameday = sel.extras.includes('same day') ? 5 : 0;
+    const discountable = base + extraTotal - sameday;
+    return Math.round((discountable*0.9 + sameday) * 100) / 100;
+  }
   return base + extraTotal;
 }
 
@@ -437,8 +455,20 @@ document.getElementById('add-btn').addEventListener('click', async ()=>{
   const dateVal=document.getElementById('date-input').value;
   const labelVal=document.getElementById('label-input').value;
 
-  const entry={date:dateVal,label:labelVal,film:sel.film,format:sel.format,
-    option:sel.option,prints:sel.prints||'NO',extra:sel.extras.join(', '),price:p};
+  // Send extras as separate fields for Apps Script
+  const entry={
+    date:dateVal,
+    label:labelVal,
+    film:sel.film,
+    format:sel.format,
+    option:sel.option,
+    prints:sel.prints||'NO',
+    extra1: sel.extras[0] || '',
+    extra2: sel.extras[1] || '',
+    extra3: sel.extras[2] || '',
+    extra: sel.extras.join(', '), // legacy field for display
+    price:p
+  };
 
   const btn=document.getElementById('add-btn');
   btn.disabled=true; btn.textContent='Syncing…'; btn.classList.add('loading');
@@ -448,6 +478,7 @@ document.getElementById('add-btn').addEventListener('click', async ()=>{
 
   // Reset extras
   sel.extras=[]; document.querySelectorAll('[data-g="extra"]').forEach(x=>x.classList.remove('active'));
+  updatePrice(); // refresh displayed price for the next roll
   // Auto-increment label
   if(labelVal) document.getElementById('label-input').value=String(parseInt(labelVal)+1);
 
