@@ -221,6 +221,10 @@
       <div class="section-label">Twin label #</div>
       <input type="number" id="label-input" placeholder="e.g. 9500" inputmode="numeric">
     </div>
+    <div>
+      <div class="section-label">To label # <span style="opacity:0.6;font-weight:400">(optional, for batch)</span></div>
+      <input type="number" id="label-end-input" placeholder="e.g. 9509" inputmode="numeric">
+    </div>
   </div>
 
   <div class="section">
@@ -396,8 +400,34 @@ function getPrice(){
 
 function updatePrice(){
   const p=getPrice();
-  document.getElementById('calc-price').innerHTML = p!==null ? `&#163;${p.toFixed(2)}` : '&mdash;';
+  const startVal = document.getElementById('label-input').value;
+  const endVal = document.getElementById('label-end-input').value;
+  const start = parseInt(startVal);
+  const end = endVal ? parseInt(endVal) : start;
+  const batchSize = (!isNaN(start) && !isNaN(end) && end >= start) ? (end - start + 1) : 1;
+
+  if(p === null){
+    document.getElementById('calc-price').innerHTML = '&mdash;';
+  } else if(batchSize > 1){
+    document.getElementById('calc-price').innerHTML =
+      `&#163;${p.toFixed(2)} <span style="font-size:14px;opacity:0.7">× ${batchSize} = &#163;${(p*batchSize).toFixed(2)}</span>`;
+  } else {
+    document.getElementById('calc-price').innerHTML = `&#163;${p.toFixed(2)}`;
+  }
+
+  // Update button label
+  const btn = document.getElementById('add-btn');
+  if(!btn.disabled){
+    btn.textContent = batchSize > 1
+      ? `+ Log ${batchSize} rolls → sync`
+      : '+ Log roll → sync to Sheet';
+  }
 }
+
+// Re-compute price/batch when labels change
+['label-input','label-end-input'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updatePrice);
+});
 
 function updateSummary(){
   const total=log.reduce((a,r)=>a+r.price,0);
@@ -454,40 +484,74 @@ document.getElementById('add-btn').addEventListener('click', async ()=>{
 
   const dateVal=document.getElementById('date-input').value;
   const labelVal=document.getElementById('label-input').value;
+  const labelEndVal=document.getElementById('label-end-input').value;
 
-  // Send extras as separate fields for Apps Script
-  const entry={
-    date:dateVal,
-    label:labelVal,
-    film:sel.film,
-    format:sel.format,
-    option:sel.option,
-    prints:sel.prints||'NO',
-    extra1: sel.extras[0] || '',
-    extra2: sel.extras[1] || '',
-    extra3: sel.extras[2] || '',
-    extra: sel.extras.join(', '), // legacy field for display
-    price:p
-  };
+  // Determine batch range
+  const startLabel = parseInt(labelVal);
+  const endLabel = labelEndVal ? parseInt(labelEndVal) : startLabel;
+
+  if(!labelVal || isNaN(startLabel)){
+    showToast('Enter a Twin Label first','error'); return;
+  }
+  if(labelEndVal && (isNaN(endLabel) || endLabel < startLabel)){
+    showToast('End label must be ≥ start label','error'); return;
+  }
+  const batchSize = endLabel - startLabel + 1;
+  if(batchSize > 50){
+    showToast('Max 50 rolls per batch','error'); return;
+  }
 
   const btn=document.getElementById('add-btn');
-  btn.disabled=true; btn.textContent='Syncing…'; btn.classList.add('loading');
+  const baseLabel = btn.textContent;
+  btn.disabled=true; btn.classList.add('loading');
 
-  log.push({...entry, synced:false, syncFailed:false});
-  const idx=log.length-1;
+  // Build all entries up front
+  const entries = [];
+  for(let lbl = startLabel; lbl <= endLabel; lbl++){
+    entries.push({
+      date:dateVal,
+      label:String(lbl),
+      film:sel.film,
+      format:sel.format,
+      option:sel.option,
+      prints:sel.prints||'NO',
+      extra1: sel.extras[0] || '',
+      extra2: sel.extras[1] || '',
+      extra3: sel.extras[2] || '',
+      extra: sel.extras.join(', '),
+      price:p
+    });
+  }
 
-  // Reset extras
+  // Push all to log as pending
+  const startIdx = log.length;
+  entries.forEach(e => log.push({...e, synced:false, syncFailed:false}));
+
+  // Reset extras + clear end-label input now (so UI updates immediately)
   sel.extras=[]; document.querySelectorAll('[data-g="extra"]').forEach(x=>x.classList.remove('active'));
-  updatePrice(); // refresh displayed price for the next roll
-  // Auto-increment label
-  if(labelVal) document.getElementById('label-input').value=String(parseInt(labelVal)+1);
+  updatePrice();
+  document.getElementById('label-end-input').value = '';
+  // Auto-increment start label to (end + 1)
+  document.getElementById('label-input').value = String(endLabel + 1);
 
   renderLog(); updateSummary();
 
-  await syncToSheet(entry, idx);
+  // Send one by one, showing progress
+  let okCount = 0;
+  for(let i = 0; i < entries.length; i++){
+    btn.textContent = batchSize > 1 ? `Syncing ${i+1}/${batchSize}…` : 'Syncing…';
+    await syncToSheet(entries[i], startIdx + i);
+    if(log[startIdx + i].synced) okCount++;
+  }
 
-  btn.disabled=false; btn.textContent='+ Log roll → sync to Sheet'; btn.classList.remove('loading');
-  showToast(log[idx].synced?'Synced to Google Sheet!':'Saved locally (sync failed)','success');
+  btn.disabled=false; btn.textContent=baseLabel; btn.classList.remove('loading');
+  if(okCount === batchSize){
+    showToast(batchSize > 1 ? `✓ Synced ${batchSize} rolls!` : 'Synced to Google Sheet!', 'success');
+  } else if(okCount > 0){
+    showToast(`Synced ${okCount}/${batchSize} — some failed`, 'error');
+  } else {
+    showToast('Sync failed (saved locally)', 'error');
+  }
 });
 
 function showToast(msg, type=''){
